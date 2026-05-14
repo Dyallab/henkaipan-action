@@ -1,0 +1,22 @@
+# Build output
+dist/
+
+# Docker
+*.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Test / coverage
+coverage/
+.nyc_output/

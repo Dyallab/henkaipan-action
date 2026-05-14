@@ -1,0 +1,44 @@
+name: Docker Security Scan
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/Dockerfile"
+      - "**/docker-compose*.yml"
+      - ".github/workflows/docker-security.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/Dockerfile"
+      - "**/docker-compose*.yml"
+      - ".github/workflows/docker-security.yml"
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run HenKaiPan Security Scan
+        uses: dyallab/henkaipan-action@v1
+        with:
+          api-url: ${{ secrets.HENKAIPAN_API_URL }}
+          api-key: ${{ secrets.HENKAIPAN_API_KEY }}
+          project-id: ${{ secrets.HENKAIPAN_PROJECT_ID }}
+          scanners: "trivy,grype"
+          fail-on-severity: critical
+
+      # Optional: build and scan Docker image from Dockerfile
+      - name: Build Docker image
+        run: |
+          docker build -t myapp:${{ github.sha }} .
+
+      - name: Run HenKaiPan container scan
+        uses: dyallab/henkaipan-action@v1
+        with:
+          api-url: ${{ secrets.HENKAIPAN_API_URL }}
+          api-key: ${{ secrets.HENKAIPAN_API_KEY }}
+          project-id: ${{ secrets.HENKAIPAN_PROJECT_ID }}
+          scanners: "containers"
+          fail-on-severity: critical

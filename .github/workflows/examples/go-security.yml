@@ -1,0 +1,30 @@
+name: Go Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run HenKaiPan Security Scan
+        uses: dyallab/henkaipan-action@v1
+        with:
+          api-url: ${{ secrets.HENKAIPAN_API_URL }}
+          api-key: ${{ secrets.HENKAIPAN_API_KEY }}
+          project-id: ${{ secrets.HENKAIPAN_PROJECT_ID }}
+          scanners: "semgrep,trivy,gitleaks"
+          fail-on-severity: high

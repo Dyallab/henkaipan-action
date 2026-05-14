@@ -1,0 +1,45 @@
+name: Test Action Structure
+
+on:
+  push:
+    branches: [main, v1]
+  pull_request:
+    branches: [main, v1]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate action.yml
+        run: |
+          echo "Checking action.yml exists..."
+          test -f action.yml || { echo "ERROR: action.yml not found"; exit 1; }
+
+          echo "Checking Dockerfile exists..."
+          test -f Dockerfile || { echo "ERROR: Dockerfile not found"; exit 1; }
+
+          echo "Checking entrypoint.sh exists..."
+          test -f entrypoint.sh || { echo "ERROR: entrypoint.sh not found"; exit 1; }
+
+          echo "Checking entrypoint.sh is executable..."
+          test -x entrypoint.sh || { echo "ERROR: entrypoint.sh is not executable"; exit 1; }
+
+          echo "All required files present and valid."
+
+      - name: Build Docker image
+        run: |
+          echo "Building Docker image to validate Dockerfile..."
+          docker build -t henkaipan-action-test:latest . || { echo "ERROR: Docker build failed"; exit 1; }
+          echo "Docker image built successfully."
+
+      - name: Validate cleanup.sh exists
+        run: |
+          echo "Checking cleanup.sh exists..."
+          test -f cleanup.sh || { echo "ERROR: cleanup.sh not found"; exit 1; }
+
+          echo "Checking cleanup.sh is executable..."
+          test -x cleanup.sh || { echo "ERROR: cleanup.sh is not executable"; exit 1; }
+
+          echo "cleanup.sh present and valid."

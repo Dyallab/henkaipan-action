@@ -1,0 +1,110 @@
+# action.yml — HenKaiPan Security Scan GitHub Action
+# Docker-based action that triggers scans via the HenKaiPan API
+
+name: "HenKaiPan Security Scan"
+description: >
+  Run security scans (SAST, SCA, secrets, vulnerabilities) against your codebase
+  and post results directly in your CI/CD pipeline.
+author: "Dyallab"
+branding:
+  icon: "shield-check"
+  color: "cyan"
+
+inputs:
+  api-url:
+    description: >
+      Base URL of your HenKaiPan instance (e.g. https://app.henkaipan.com).
+      For self-hosted, use your configured public URL.
+    required: true
+  api-key:
+    description: >
+      API token from HenKaiPan Settings → API Tokens.
+      Store it as a secret (e.g. HENKAIPAN_API_KEY).
+    required: true
+    sensitive: true
+  project-id:
+    description: >
+      UUID of the HenKaiPan project to scan. Found in project Settings.
+    required: true
+  scanners:
+    description: >
+      Comma-separated list of scanners or scanner packs.
+      Use "all" (default) for full coverage, or specify individual scanners
+      (e.g. "semgrep,trivy,gitleaks,grype").
+      Available: all, sast, sca, secrets, vuln, containers.
+    required: false
+    default: "all"
+  fail-on-severity:
+    description: >
+      Minimum severity that causes the action to fail (exit code 1).
+      Options: critical, high, medium, low, none.
+      When set, the action blocks the pipeline if findings >= severity.
+    required: false
+    default: ""
+  scan-branch:
+    description: >
+      Git branch to scan. Defaults to the current commit's branch.
+      Useful for forcing a specific branch target.
+    required: false
+    default: ""
+  post-pr-comment:
+    description: >
+      Post a summary comment to the GitHub Pull Request with scan results.
+      Requires GITHUB_TOKEN secret to be present (it is by default in PR workflows).
+    required: false
+    default: "true"
+
+outputs:
+  scan-id:
+    description: >
+      Comma-separated list of scan IDs created for this run.
+    value: ${{ steps.run-scan.outputs.scan-id }}
+  finding-count:
+    description: >
+      Comma-separated list of total finding counts per scan.
+    value: ${{ steps.run-scan.outputs.finding-count }}
+  finding-critical:
+    description: >
+      Comma-separated list of critical finding counts per scan.
+    value: ${{ steps.run-scan.outputs.finding-critical }}
+  finding-high:
+    description: >
+      Comma-separated list of high finding counts per scan.
+    value: ${{ steps.run-scan.outputs.finding-high }}
+  finding-medium:
+    description: >
+      Comma-separated list of medium finding counts per scan.
+    value: ${{ steps.run-scan.outputs.finding-medium }}
+  finding-low:
+    description: >
+      Comma-separated list of low finding counts per scan.
+    value: ${{ steps.run-scan.outputs.finding-low }}
+
+runs:
+  using: "docker"
+  image: "Dockerfile"
+  args:
+    - ${{ inputs.api-url }}
+    - ${{ inputs.api-key }}
+    - ${{ inputs.project-id }}
+    - ${{ inputs.scanners }}
+    - ${{ inputs.fail-on-severity }}
+    - ${{ inputs.scan-branch }}
+    - ${{ inputs.post-pr-comment }}
+
+env:
+  HENKAIPAN_API_URL: ${{ inputs.api-url }}
+  HENKAIPAN_API_KEY: ${{ inputs.api-key }}
+  HENKAIPAN_PROJECT_ID: ${{ inputs.project-id }}
+  HENKAIPAN_SCANNERS: ${{ inputs.scanners }}
+  HENKAIPAN_FAIL_ON_SEVERITY: ${{ inputs.fail-on-severity }}
+  HENKAIPAN_SCAN_BRANCH: ${{ inputs.scan-branch }}
+  HENKAIPAN_POST_PR_COMMENT: ${{ inputs.post-pr-comment }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GITHUB_REPOSITORY: ${{ github.repository }}
+  GITHUB_EVENT_NAME: ${{ github.event_name }}
+  GITHUB_SHA: ${{ github.sha }}
+  GITHUB_REF: ${{ github.ref }}
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+
+id: run-scan

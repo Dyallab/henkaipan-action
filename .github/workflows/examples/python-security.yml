@@ -1,0 +1,31 @@
+name: Python Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt --upgrade pip
+
+      - name: Run HenKaiPan Security Scan
+        uses: dyallab/henkaipan-action@v1
+        with:
+          api-url: ${{ secrets.HENKAIPAN_API_URL }}
+          api-key: ${{ secrets.HENKAIPAN_API_KEY }}
+          project-id: ${{ secrets.HENKAIPAN_PROJECT_ID }}
+          scanners: "semgrep,trivy,gitleaks"
+          fail-on-severity: high

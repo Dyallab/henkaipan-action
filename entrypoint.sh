@@ -1,0 +1,306 @@
+#!/bin/bash
+# entrypoint.sh — HenKaiPan GitHub Action
+# Main entrypoint for the Docker-based action
+
+set -euo pipefail
+
+# ── Input defaults ────────────────────────────────────────────────────────────
+API_URL="${HENKAIPAN_API_URL:-}"
+API_KEY="${HENKAIPAN_API_KEY:-}"
+PROJECT_ID="${HENKAIPAN_PROJECT_ID:-}"
+SCANNERS="${HENKAIPAN_SCANNERS:-all}"
+FAIL_ON="${HENKAIPAN_FAIL_ON_SEVERITY:-}"
+SCAN_BRANCH="${HENKAIPAN_SCAN_BRANCH:-}"
+POST_PR_COMMENT="${HENKAIPAN_POST_PR_COMMENT:-true}"
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-}"
+GITHUB_EVENT_NAME="${GITHUB_EVENT_NAME:-}"
+PR_NUMBER="${PR_NUMBER:-}"
+
+# ── Validate required inputs ──────────────────────────────────────────────────
+if [[ -z "$API_URL" ]]; then
+    echo "ERROR: api-url is required. Set the 'api-url' input."
+    exit 1
+fi
+if [[ -z "$API_KEY" ]]; then
+    echo "ERROR: api-key is required. Set the 'api-key' input."
+    exit 1
+fi
+if [[ -z "$PROJECT_ID" ]]; then
+    echo "ERROR: project-id is required. Set the 'project-id' input."
+    exit 1
+fi
+
+echo "=============================================="
+echo " HenKaiPan Security Scan"
+echo "=============================================="
+echo "API URL     : $API_URL"
+echo "Project ID  : $PROJECT_ID"
+echo "Scanners    : $SCANNERS"
+echo "Fail on     : ${FAIL_ON:-none}"
+echo "Branch      : ${SCAN_BRANCH:-<current branch>}"
+echo "=============================================="
+
+# ── Determine target (repo URL + optional branch) ────────────────────────────
+# Detect the GitHub repository URL from the runner environment
+REPO_URL="https://github.com/${GITHUB_REPOSITORY}.git"
+GITHUB_BRANCH="${SCAN_BRANCH:-${GITHUB_REF#refs/heads/}}"
+
+echo ""
+echo "[1/3] Triggering scan for $REPO_URL (branch: $GITHUB_BRANCH)..."
+
+PAYLOAD=$(jq -n \
+    --arg pid "$PROJECT_ID" \
+    --arg url "$REPO_URL" \
+    --arg scanners "$SCANNERS" \
+    --arg branch "$GITHUB_BRANCH" \
+    '{
+        project_id: $pid,
+        repo_url: $url,
+        scanners: ($scanners | split(",") | map(trim)),
+        branch: $branch
+    }')
+
+# ── Trigger scan ──────────────────────────────────────────────────────────────
+RESPONSE=$(curl -s -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-API-Key: $API_KEY" \
+    -d "$PAYLOAD" \
+    "$API_URL/api/v1/scans/external")
+
+if [[ $? -ne 0 ]]; then
+    echo "ERROR: Failed to connect to HenKaiPan at $API_URL"
+    exit 1
+fi
+
+# Parse scan response
+SCAN_IDS=$(echo "$RESPONSE" | jq -r '.scan_ids // [] | join(",")')
+BATCH_ID=$(echo "$RESPONSE" | jq -r '.batch_id // ""')
+HTTP_STATUS=$(echo "$RESPONSE" | jq -r '.status // empty')
+
+if [[ "$HTTP_STATUS" != "accepted" ]]; then
+    ERROR_MSG=$(echo "$RESPONSE" | jq -r '.error // .message // "Unknown error"')
+    echo "ERROR: HenKaiPan rejected the scan request: $ERROR_MSG"
+    exit 1
+fi
+
+echo "      Scan accepted — batch: $BATCH_ID, IDs: $SCAN_IDS"
+
+# ── Poll for completion ───────────────────────────────────────────────────────
+echo ""
+echo "[2/3] Waiting for scan to complete..."
+
+SEVERITY_ORDER="critical high medium low"
+declare -A SEVERITY_WEIGHT=([critical]=4 [high]=3 [medium]=2 [low]=1)
+
+FAIL_THRESHOLD=0
+if [[ -n "$FAIL_ON" && "$FAIL_ON" != "none" ]]; then
+    # Convert severity name to numeric threshold
+    case "$FAIL_ON" in
+        critical) FAIL_THRESHOLD=4 ;;
+        high)     FAIL_THRESHOLD=3 ;;
+        medium)   FAIL_THRESHOLD=2 ;;
+        low)      FAIL_THRESHOLD=1 ;;
+        *)        FAIL_THRESHOLD=0 ;;
+    esac
+fi
+
+POLL_INTERVAL=15
+MAX_WAIT=$((20 * 60))  # 20 minutes max
+ELAPSED=0
+
+FAILED_SCANS=""
+TOTAL_CRITICAL=0
+TOTAL_HIGH=0
+TOTAL_MEDIUM=0
+TOTAL_LOW=0
+
+# Split scan IDs and track per-scan state
+IFS=',' read -ra SCAN_ID_ARRAY <<< "$SCAN_IDS"
+declare -A SCAN_STATES
+for sid in "${SCAN_ID_ARRAY[@]}"; do
+    SCAN_STATES[$sid]="pending"
+done
+
+while true; do
+    if [[ $ELAPSED -ge $MAX_WAIT ]]; then
+        echo "ERROR: Timed out after ${MAX_WAIT}s waiting for scans."
+        exit 1
+    fi
+
+    ALL_DONE=true
+    for SCAN_ID in "${SCAN_ID_ARRAY[@]}"; do
+        STATE="${SCAN_STATES[$SCAN_ID]}"
+        if [[ "$STATE" == "completed" || "$STATE" == "failed" ]]; then
+            continue
+        fi
+
+        STATUS_RESP=$(curl -s \
+            -H "X-API-Key: $API_KEY" \
+            "$API_URL/api/v1/scans/$SCAN_ID/status")
+
+        if [[ $? -ne 0 ]]; then
+            echo "WARN: Failed to query scan $SCAN_ID, retrying..."
+            sleep $POLL_INTERVAL
+            ELAPSED=$((ELAPSED + POLL_INTERVAL))
+            ALL_DONE=false
+            break
+        fi
+
+        NEW_STATE=$(echo "$STATUS_RESP" | jq -r '.scan.status // "unknown"')
+        SCAN_STATES[$SCAN_ID]="$NEW_STATE"
+
+        if [[ "$NEW_STATE" == "running" || "$NEW_STATE" == "pending" ]]; then
+            ALL_DONE=false
+        fi
+
+        if [[ "$NEW_STATE" == "failed" ]]; then
+            FAILED_SCANS="$FAILED_SCANS $SCAN_ID"
+        fi
+
+        # Accumulate finding counts
+        if [[ "$NEW_STATE" == "completed" ]]; then
+            # Sum findings by severity from the response
+            CRIT=$(echo "$STATUS_RESP" | jq '[.findings[] | select(.severity == "critical")] | length')
+            HIGH=$(echo "$STATUS_RESP" | jq '[.findings[] | select(.severity == "high")] | length')
+            MED=$(echo "$STATUS_RESP" | jq '[.findings[] | select(.severity == "medium")] | length')
+            LOW=$(echo "$STATUS_RESP" | jq '[.findings[] | select(.severity == "low")] | length')
+            TOTAL_CRITICAL=$((TOTAL_CRITICAL + CRIT))
+            TOTAL_HIGH=$((TOTAL_HIGH + HIGH))
+            TOTAL_MEDIUM=$((TOTAL_MEDIUM + MED))
+            TOTAL_LOW=$((TOTAL_LOW + LOW))
+        fi
+
+        echo "      Scan $SCAN_ID: $NEW_STATE"
+    done
+
+    if $ALL_DONE; then
+        break
+    fi
+
+    echo "      Waiting ${POLL_INTERVAL}s..."
+    sleep $POLL_INTERVAL
+    ELAPSED=$((ELAPSED + POLL_INTERVAL))
+done
+
+echo ""
+echo "[3/3] Scan complete."
+
+# ── Report results ────────────────────────────────────────────────────────────
+TOTAL=$((TOTAL_CRITICAL + TOTAL_HIGH + TOTAL_MEDIUM + TOTAL_LOW))
+
+echo ""
+echo "=============================================="
+echo " HenKaiPan Scan Results"
+echo "=============================================="
+echo "Critical : $TOTAL_CRITICAL"
+echo "High     : $TOTAL_HIGH"
+echo "Medium   : $TOTAL_MEDIUM"
+echo "Low      : $TOTAL_LOW"
+echo "Total    : $TOTAL"
+echo "=============================================="
+
+# Check for failed scans
+if [[ -n "$FAILED_SCANS" ]]; then
+    echo "WARNING: Some scans failed:$FAILED_SCANS"
+fi
+
+# ── Set GitHub Action outputs ─────────────────────────────────────────────────
+echo "scan-id=$SCAN_IDS" >> "$GITHUB_OUTPUT"
+echo "finding-count=$TOTAL" >> "$GITHUB_OUTPUT"
+echo "finding-critical=$TOTAL_CRITICAL" >> "$GITHUB_OUTPUT"
+echo "finding-high=$TOTAL_HIGH" >> "$GITHUB_OUTPUT"
+echo "finding-medium=$TOTAL_MEDIUM" >> "$GITHUB_OUTPUT"
+echo "finding-low=$TOTAL_LOW" >> "$GITHUB_OUTPUT"
+
+# ── Determine exit code ──────────────────────────────────────────────────────
+if [[ $FAIL_THRESHOLD -gt 0 ]]; then
+    CURRENT_WEIGHT=0
+    if   [[ $TOTAL_CRITICAL -gt 0 && $FAIL_THRESHOLD -le 4 ]]; then CURRENT_WEIGHT=4
+    elif [[ $TOTAL_HIGH     -gt 0 && $FAIL_THRESHOLD -le 3 ]]; then CURRENT_WEIGHT=3
+    elif [[ $TOTAL_MEDIUM   -gt 0 && $FAIL_THRESHOLD -le 2 ]]; then CURRENT_WEIGHT=2
+    elif [[ $TOTAL_LOW      -gt 0 && $FAIL_THRESHOLD -le 1 ]]; then CURRENT_WEIGHT=1
+    fi
+
+    if [[ $CURRENT_WEIGHT -ge $FAIL_THRESHOLD ]]; then
+        echo ""
+        echo "ERROR: Findings exceed fail-on-severity threshold ($FAIL_ON)."
+        echo "Blocking pipeline."
+        exit 1
+    fi
+fi
+
+echo ""
+echo "HenKaiPan scan completed successfully."
+
+# ── Post PR comment ────────────────────────────────────────────────────────────
+postPRComment() {
+    if [[ "$POST_PR_COMMENT" != "true" ]]; then
+        return 0
+    fi
+    if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+        return 0
+    fi
+    if [[ -z "$PR_NUMBER" || "$PR_NUMBER" == "null" || -z "$GITHUB_TOKEN" ]]; then
+        return 0
+    fi
+
+    echo ""
+    echo "[PR] Posting results to GitHub PR #$PR_NUMBER..."
+
+    # Build markdown body
+    local BLOCKED=""
+    if [[ $FAIL_THRESHOLD -gt 0 && $CURRENT_WEIGHT -ge $FAIL_THRESHOLD ]]; then
+        BLOCKED=" 🚫 **Pipeline blocked** — findings meet or exceed `$FAIL_ON` threshold."
+    fi
+
+    local BODY=$(cat <<COMMENT_EOF
+## 🔍 HenKaiPan Security Scan Results
+
+| Severity | Count |
+|----------|-------:|
+| 🔴 Critical | **$TOTAL_CRITICAL** |
+| 🟠 High | **$TOTAL_HIGH** |
+| 🟡 Medium | **$TOTAL_MEDIUM** |
+| 🟢 Low | **$TOTAL_LOW** |
+
+**Total: $TOTAL finding(s)** | Scan IDs: \`$SCAN_IDS\`$BLOCKED
+
+_This comment was posted automatically by the HenKaiPan GitHub Action._
+COMMENT_EOF
+)
+
+    # Post or edit existing comment
+    local COMMENT_ID=""
+    if COMMENT_ID=$(curl -s -f \
+        -H "Authorization: token $GITHUB_TOKEN" \
+        "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+        | jq -r ".[] | select(.body | contains(\"HenKaiPan Security Scan Results\")) | .id" 2>/dev/null \
+        | head -1) && [[ -n "$COMMENT_ID" ]]; then
+        echo "[PR] Updating existing comment $COMMENT_ID..."
+        curl -s -f -X PATCH \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"body\": $BODY}" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" \
+            > /dev/null
+    else
+        echo "[PR] Posting new comment..."
+        curl -s -f -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"body\": $BODY}" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            > /dev/null
+    fi
+
+    if [[ $? -eq 0 ]]; then
+        echo "[PR] Comment posted successfully."
+    else
+        echo "[PR] Failed to post comment (non-fatal, continuing)."
+    fi
+}
+
+postPRComment
+
+exit 0

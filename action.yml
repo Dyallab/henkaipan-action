@@ -3,17 +3,16 @@
 
 name: "HenKaiPan Security Scan"
 description: >
-  Run security scans (SAST, SCA, secrets, vulnerabilities) against your codebase
-  and post results directly in your CI/CD pipeline.
+  Run security scans against your codebase and post results directly in your CI/CD pipeline.
 author: "Dyallab"
 branding:
-  icon: "shield-check"
-  color: "cyan"
+  icon: "check-circle"
+  color: gray-dark
 
 inputs:
   api-url:
     description: >
-      Base URL of your HenKaiPan instance (e.g. https://app.henkaipan.com).
+      Base URL of your HenKaiPan instance (e.g. https://app.dyallab.com).
       For self-hosted, use your configured public URL.
     required: true
   api-key:
@@ -21,7 +20,6 @@ inputs:
       API token from HenKaiPan Settings → API Tokens.
       Store it as a secret (e.g. HENKAIPAN_API_KEY).
     required: true
-    sensitive: true
   project-id:
     description: >
       UUID of the HenKaiPan project to scan. Found in project Settings.
@@ -58,31 +56,26 @@ outputs:
   scan-id:
     description: >
       Comma-separated list of scan IDs created for this run.
-    value: ${{ steps.run-scan.outputs.scan-id }}
   finding-count:
     description: >
       Comma-separated list of total finding counts per scan.
-    value: ${{ steps.run-scan.outputs.finding-count }}
   finding-critical:
     description: >
       Comma-separated list of critical finding counts per scan.
-    value: ${{ steps.run-scan.outputs.finding-critical }}
   finding-high:
     description: >
       Comma-separated list of high finding counts per scan.
-    value: ${{ steps.run-scan.outputs.finding-high }}
   finding-medium:
     description: >
       Comma-separated list of medium finding counts per scan.
-    value: ${{ steps.run-scan.outputs.finding-medium }}
   finding-low:
     description: >
       Comma-separated list of low finding counts per scan.
-    value: ${{ steps.run-scan.outputs.finding-low }}
 
 runs:
   using: "docker"
   image: "Dockerfile"
+  entrypoint: '/entrypoint.sh'
   args:
     - ${{ inputs.api-url }}
     - ${{ inputs.api-key }}
@@ -91,6 +84,8 @@ runs:
     - ${{ inputs.fail-on-severity }}
     - ${{ inputs.scan-branch }}
     - ${{ inputs.post-pr-comment }}
+  post-if: cancelled()
+  post-entrypoint: '/cleanup.sh'
 
 env:
   HENKAIPAN_API_URL: ${{ inputs.api-url }}
@@ -107,4 +102,3 @@ env:
   GITHUB_REF: ${{ github.ref }}
   PR_NUMBER: ${{ github.event.pull_request.number }}
 
-id: run-scan

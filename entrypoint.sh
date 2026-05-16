@@ -21,6 +21,9 @@ GITHUB_REF="${GITHUB_REF:-}"
 GITHUB_OUTPUT="${GITHUB_OUTPUT:-/dev/null}"
 PR_NUMBER="${PR_NUMBER:-}"
 
+# Strip trailing slash from API_URL to prevent double-slash in path
+while [[ "$API_URL" == */ ]]; do API_URL="${API_URL%/}"; done
+
 # ── Validate required inputs ──────────────────────────────────────────────────
 if [[ -z "$API_URL" ]]; then
     echo "ERROR: api-url is required. Set the 'api-url' input."
@@ -36,7 +39,7 @@ if [[ -z "$PROJECT_ID" ]]; then
 fi
 
 # ── Cloudflare Access Service Token headers (optional) ─────────────────────────
-CURL_COMMON_ARGS=(-s -H "Content-Type: application/json" -H "X-API-Key: $API_KEY")
+CURL_COMMON_ARGS=(-s --compressed -H "Content-Type: application/json" -H "X-API-Key: $API_KEY" -H "User-Agent: HenKaiPan-Action/1.1.0")
 if [[ -n "$CF_CLIENT_ID" && -n "$CF_CLIENT_SECRET" ]]; then
     CURL_COMMON_ARGS+=(-H "CF-Access-Client-Id: $CF_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_CLIENT_SECRET")
     echo "Cloudflare Access: using Service Token authentication"
@@ -74,12 +77,38 @@ PAYLOAD=$(jq -n \
     }')
 
 # ── Trigger scan ──────────────────────────────────────────────────────────────
-RESPONSE=$(curl "${CURL_COMMON_ARGS[@]}" -X POST \
+HTTP_CODE=$(curl "${CURL_COMMON_ARGS[@]}" -X POST \
     -d "$PAYLOAD" \
-    "$API_URL/api/v1/scans/external")
+    -o /tmp/hkp-response.json \
+    -w "%{http_code}" \
+    "$API_URL/api/v1/scans/external") || true
 
-if [[ $? -ne 0 ]]; then
+RESPONSE=$(cat /tmp/hkp-response.json 2>/dev/null || echo "")
+
+# Detect non-JSON responses (Cloudflare challenge pages, proxies, etc.)
+if [[ "$RESPONSE" == \<* ]]; then
+    echo "ERROR: Received HTML instead of JSON from $API_URL"
+    echo "       This usually means a reverse proxy or firewall (e.g. Cloudflare)"
+    echo "       is blocking the request with a challenge page."
+    echo ""
+    echo "  Fixes:"
+    echo "  • Cloudflare: add a WAF Skip rule for URI Path starts with /api/v1/scans/"
+    echo "  • Or set cf-access-client-id / cf-access-client-secret if using Cloudflare Access"
+    echo "  • Or disable Bot Fight Mode for the API path"
+    echo ""
+    echo "  HTTP status: $HTTP_CODE"
+    echo "  Response (first 200 chars): ${RESPONSE:0:200}"
+    exit 1
+fi
+
+if [[ -z "$RESPONSE" && "$HTTP_CODE" == "000" ]]; then
     echo "ERROR: Failed to connect to HenKaiPan at $API_URL"
+    exit 1
+fi
+
+if ! echo "$RESPONSE" | jq -e . >/dev/null 2>&1; then
+    echo "ERROR: Received non-JSON response from $API_URL (HTTP $HTTP_CODE)"
+    echo "  Response (first 200 chars): ${RESPONSE:0:200}"
     exit 1
 fi
 
@@ -146,10 +175,18 @@ while true; do
         fi
 
         STATUS_RESP=$(curl "${CURL_COMMON_ARGS[@]}" \
-            "$API_URL/api/v1/scans/$SCAN_ID/status")
+            "$API_URL/api/v1/scans/$SCAN_ID/status") || true
 
-        if [[ $? -ne 0 ]]; then
-            echo "WARN: Failed to query scan $SCAN_ID, retrying..."
+        if [[ -z "$STATUS_RESP" ]]; then
+            echo "WARN: Empty response querying scan $SCAN_ID, retrying..."
+            sleep $POLL_INTERVAL
+            ELAPSED=$((ELAPSED + POLL_INTERVAL))
+            ALL_DONE=false
+            break
+        fi
+
+        if [[ "$STATUS_RESP" == \<* ]]; then
+            echo "WARN: Received HTML challenge querying scan $SCAN_ID (proxy/firewall blocking), retrying..."
             sleep $POLL_INTERVAL
             ELAPSED=$((ELAPSED + POLL_INTERVAL))
             ALL_DONE=false

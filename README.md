@@ -1,6 +1,4 @@
 # HenKaiPan Security Scan GitHub Action
-
-[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-v1.0.0-cyan?style=flat-square)](https://github.com/marketplace/actions/henkaipan-security-scan)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](./LICENSE)
 
 Run security scans (SAST, SCA, secrets, vulnerability scanning) in your GitHub Actions CI/CD pipeline. Scans are powered by [HenKaiPan](https://github.com/Dyallab/henkaipan) — a self-hosted security posture manager.

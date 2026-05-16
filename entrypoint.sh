@@ -21,6 +21,11 @@ GITHUB_REF="${GITHUB_REF:-}"
 GITHUB_OUTPUT="${GITHUB_OUTPUT:-/dev/null}"
 PR_NUMBER="${PR_NUMBER:-}"
 
+# Extract PR number from GitHub event file if not already set
+if [[ -z "$PR_NUMBER" && -n "$GITHUB_EVENT_PATH" && -f "$GITHUB_EVENT_PATH" ]]; then
+    PR_NUMBER=$(jq -r '.pull_request.number // empty' "$GITHUB_EVENT_PATH" 2>/dev/null || true)
+fi
+
 # Strip trailing slash from API_URL to prevent double-slash in path
 while [[ "$API_URL" == */ ]]; do API_URL="${API_URL%/}"; done
 

@@ -65,11 +65,6 @@ inputs:
       with Access policies enforcing Service Auth.
     required: false
     default: ""
-  github-token:
-    description: >
-      GitHub token for posting PR comments. Defaults to the auto-generated token.
-    required: false
-    default: ${{ github.token }}
 
 outputs:
   scan-id:
@@ -95,9 +90,6 @@ runs:
   using: "docker"
   image: "Dockerfile"
   entrypoint: "/entrypoint.sh"
-  env:
-    PR_NUMBER: ${{ github.event.pull_request.number }}
-    GITHUB_TOKEN: ${{ inputs.github-token }}
   args:
     - ${{ inputs.api-url }}
     - ${{ inputs.api-key }}

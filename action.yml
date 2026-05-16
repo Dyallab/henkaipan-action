@@ -51,6 +51,20 @@ inputs:
       Requires GITHUB_TOKEN secret to be present (it is by default in PR workflows).
     required: false
     default: "true"
+  cf-access-client-id:
+    description: >
+      Cloudflare Access Service Token Client ID.
+      Required when your HenKaiPan instance is behind a Cloudflare Tunnel
+      with Access policies enforcing Service Auth.
+    required: false
+    default: ""
+  cf-access-client-secret:
+    description: >
+      Cloudflare Access Service Token Client Secret.
+      Required when your HenKaiPan instance is behind a Cloudflare Tunnel
+      with Access policies enforcing Service Auth.
+    required: false
+    default: ""
 
 outputs:
   scan-id:
@@ -84,5 +98,7 @@ runs:
     - ${{ inputs.fail-on-severity }}
     - ${{ inputs.scan-branch }}
     - ${{ inputs.post-pr-comment }}
+    - ${{ inputs.cf-access-client-id }}
+    - ${{ inputs.cf-access-client-secret }}
   post-if: cancelled()
   post-entrypoint: "/cleanup.sh"

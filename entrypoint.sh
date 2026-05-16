@@ -12,6 +12,8 @@ SCANNERS="${4:-all}"
 FAIL_ON="${5:-}"
 SCAN_BRANCH="${6:-}"
 POST_PR_COMMENT="${7:-true}"
+CF_CLIENT_ID="${8:-}"
+CF_CLIENT_SECRET="${9:-}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-}"
 GITHUB_EVENT_NAME="${GITHUB_EVENT_NAME:-}"
@@ -33,6 +35,13 @@ if [[ -z "$PROJECT_ID" ]]; then
     exit 1
 fi
 
+# ── Cloudflare Access Service Token headers (optional) ─────────────────────────
+CURL_COMMON_ARGS=(-s -H "Content-Type: application/json" -H "X-API-Key: $API_KEY")
+if [[ -n "$CF_CLIENT_ID" && -n "$CF_CLIENT_SECRET" ]]; then
+    CURL_COMMON_ARGS+=(-H "CF-Access-Client-Id: $CF_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_CLIENT_SECRET")
+    echo "Cloudflare Access: using Service Token authentication"
+fi
+
 echo "=============================================="
 echo " HenKaiPan Security Scan"
 echo "=============================================="
@@ -41,6 +50,7 @@ echo "Project ID  : $PROJECT_ID"
 echo "Scanners    : $SCANNERS"
 echo "Fail on     : ${FAIL_ON:-none}"
 echo "Branch      : ${SCAN_BRANCH:-<current branch>}"
+[[ -n "$CF_CLIENT_ID" ]] && echo "CF Access   : enabled"
 echo "=============================================="
 
 # ── Determine target (repo URL + optional branch) ────────────────────────────
@@ -64,9 +74,7 @@ PAYLOAD=$(jq -n \
     }')
 
 # ── Trigger scan ──────────────────────────────────────────────────────────────
-RESPONSE=$(curl -s -X POST \
-    -H "Content-Type: application/json" \
-    -H "X-API-Key: $API_KEY" \
+RESPONSE=$(curl "${CURL_COMMON_ARGS[@]}" -X POST \
     -d "$PAYLOAD" \
     "$API_URL/api/v1/scans/external")
 
@@ -137,8 +145,7 @@ while true; do
             continue
         fi
 
-        STATUS_RESP=$(curl -s \
-            -H "X-API-Key: $API_KEY" \
+        STATUS_RESP=$(curl "${CURL_COMMON_ARGS[@]}" \
             "$API_URL/api/v1/scans/$SCAN_ID/status")
 
         if [[ $? -ne 0 ]]; then

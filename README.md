@@ -65,6 +65,8 @@ That's it. The action will trigger a scan and poll until completion.
 | `fail-on-severity` | No | _(none)_ | Exit code 1 if findings ≥ severity (`critical`, `high`, `medium`, `low`) |
 | `scan-branch` | No | current branch | Git branch to scan |
 | `post-pr-comment` | No | `true` | Post a summary comment to the GitHub Pull Request with scan results |
+| `cf-access-client-id` | No | — | Cloudflare Access Service Token Client ID (for instances behind a Cloudflare Tunnel) |
+| `cf-access-client-secret` | No | — | Cloudflare Access Service Token Client Secret (for instances behind a Cloudflare Tunnel) |
 
 ### Available Scanner Packs
 
@@ -141,6 +143,29 @@ jobs:
           project-id: your-project-uuid
           scanners: all
 ```
+
+### Self-hosted behind Cloudflare Tunnel
+
+For HenKaiPan behind a Cloudflare Tunnel with Access policies, authenticate via a **Service Token**:
+
+1. In Cloudflare Zero Trust → **Access → Service Auth** → create a Service Token
+2. Copy the **Client ID** and **Client Secret**
+3. Add them as GitHub secrets (e.g. `CF_CLIENT_ID` and `CF_CLIENT_SECRET`)
+4. In Cloudflare Access → your app → add a policy that requires the Service Token
+
+```yaml
+- name: Run HenKaiPan Security Scan
+  uses: dyallab/henkaipan-action@v1
+  with:
+    api-url: https://henkaipan.internal.yourdomain.com
+    api-key: ${{ secrets.HENKAIPAN_API_KEY }}
+    project-id: ${{ secrets.HENKAIPAN_PROJECT_ID }}
+    scanners: all
+    cf-access-client-id: ${{ secrets.CF_CLIENT_ID }}
+    cf-access-client-secret: ${{ secrets.CF_CLIENT_SECRET }}
+```
+
+The action automatically adds `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers to every API request when both values are provided.
 
 ### Disable PR comments
 

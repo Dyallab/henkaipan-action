@@ -75,7 +75,7 @@ outputs:
 runs:
   using: "docker"
   image: "Dockerfile"
-  entrypoint: '/entrypoint.sh'
+  entrypoint: "/entrypoint.sh"
   args:
     - ${{ inputs.api-url }}
     - ${{ inputs.api-key }}
@@ -85,20 +85,4 @@ runs:
     - ${{ inputs.scan-branch }}
     - ${{ inputs.post-pr-comment }}
   post-if: cancelled()
-  post-entrypoint: '/cleanup.sh'
-
-env:
-  HENKAIPAN_API_URL: ${{ inputs.api-url }}
-  HENKAIPAN_API_KEY: ${{ inputs.api-key }}
-  HENKAIPAN_PROJECT_ID: ${{ inputs.project-id }}
-  HENKAIPAN_SCANNERS: ${{ inputs.scanners }}
-  HENKAIPAN_FAIL_ON_SEVERITY: ${{ inputs.fail-on-severity }}
-  HENKAIPAN_SCAN_BRANCH: ${{ inputs.scan-branch }}
-  HENKAIPAN_POST_PR_COMMENT: ${{ inputs.post-pr-comment }}
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  GITHUB_REPOSITORY: ${{ github.repository }}
-  GITHUB_EVENT_NAME: ${{ github.event_name }}
-  GITHUB_SHA: ${{ github.sha }}
-  GITHUB_REF: ${{ github.ref }}
-  PR_NUMBER: ${{ github.event.pull_request.number }}
-
+  post-entrypoint: "/cleanup.sh"

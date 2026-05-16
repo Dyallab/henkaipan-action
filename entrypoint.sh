@@ -4,17 +4,19 @@
 
 set -euo pipefail
 
-# ── Input defaults ────────────────────────────────────────────────────────────
-API_URL="${HENKAIPAN_API_URL:-}"
-API_KEY="${HENKAIPAN_API_KEY:-}"
-PROJECT_ID="${HENKAIPAN_PROJECT_ID:-}"
-SCANNERS="${HENKAIPAN_SCANNERS:-all}"
-FAIL_ON="${HENKAIPAN_FAIL_ON_SEVERITY:-}"
-SCAN_BRANCH="${HENKAIPAN_SCAN_BRANCH:-}"
-POST_PR_COMMENT="${HENKAIPAN_POST_PR_COMMENT:-true}"
+# ── Input mapping from positional args (passed via action.yml runs.args) ──────
+API_URL="${1:-}"
+API_KEY="${2:-}"
+PROJECT_ID="${3:-}"
+SCANNERS="${4:-all}"
+FAIL_ON="${5:-}"
+SCAN_BRANCH="${6:-}"
+POST_PR_COMMENT="${7:-true}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-}"
 GITHUB_EVENT_NAME="${GITHUB_EVENT_NAME:-}"
+GITHUB_REF="${GITHUB_REF:-}"
+GITHUB_OUTPUT="${GITHUB_OUTPUT:-/dev/null}"
 PR_NUMBER="${PR_NUMBER:-}"
 
 # ── Validate required inputs ──────────────────────────────────────────────────

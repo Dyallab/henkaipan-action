@@ -325,7 +325,7 @@ COMMENT_EOF
     local COMMENT_ID=""
     local PAYLOAD
     PAYLOAD=$(jq -n --arg body "$BODY" '{"body": $body}')
-    local POST_STATUS=0
+    local HTTP_CODE=""
 
     if COMMENT_ID=$(curl -s -f \
         -H "Authorization: token $GITHUB_TOKEN" \
@@ -333,31 +333,59 @@ COMMENT_EOF
         | jq -r '.[] | select(.body | contains("HenKaiPan Security Scan Results")) | .id' 2>/dev/null \
         | head -1) && [[ -n "$COMMENT_ID" ]]; then
         echo "[PR] Updating existing comment $COMMENT_ID..."
-        curl -s -w "\n%{http_code}" -X PATCH \
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
-            -o /dev/null \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" > /tmp/pr-comment-result 2>&1 || POST_STATUS=$?
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID")
     else
         echo "[PR] Posting new comment..."
-        curl -s -w "\n%{http_code}" -X POST \
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
-            -o /dev/null \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" > /tmp/pr-comment-result 2>&1 || POST_STATUS=$?
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments")
     fi
 
-    if [[ $POST_STATUS -ne 0 ]]; then
-        local HTTP_CODE
-        HTTP_CODE=$(tail -1 /tmp/pr-comment-result 2>/dev/null || echo "?")
-        echo "[PR] Failed to post comment (HTTP $HTTP_CODE, non-fatal, continuing)."
+    if [[ "$HTTP_CODE" =~ ^2 ]]; then
+        echo "[PR] Comment posted successfully (HTTP $HTTP_CODE)."
     else
-        echo "[PR] Comment posted successfully."
+        echo "[PR] Failed to post comment (HTTP $HTTP_CODE, non-fatal, continuing)."
     fi
 }
 
+# ── Write GitHub Actions step summary ─────────────────────────────────────────
+writeStepSummary() {
+    if [[ -z "$GITHUB_STEP_SUMMARY" ]]; then
+        return 0
+    fi
+
+    local STATUS_EMOJI="✅"
+    local STATUS_TEXT="Passed"
+    if [[ $FAIL_THRESHOLD -gt 0 && $CURRENT_WEIGHT -ge $FAIL_THRESHOLD ]]; then
+        STATUS_EMOJI="🚫"
+        STATUS_TEXT="Blocked"
+    fi
+
+    cat >> "$GITHUB_STEP_SUMMARY" <<SUMMARY_EOF
+## 🔍 HenKaiPan Security Scan Results
+
+| Severity | Count |
+|----------|-------:|
+| 🔴 Critical | **$TOTAL_CRITICAL** |
+| 🟠 High | **$TOTAL_HIGH** |
+| 🟡 Medium | **$TOTAL_MEDIUM** |
+| 🟢 Low | **$TOTAL_LOW** |
+
+**Status:** $STATUS_EMOJI $STATUS_TEXT | **Total:** $TOTAL finding(s)
+
+**Scan IDs:** \`$SCAN_IDS\`
+SUMMARY_EOF
+
+    echo "[Summary] Written to GITHUB_STEP_SUMMARY."
+}
+
 postPRComment
+writeStepSummary
 
 exit 0

@@ -46,9 +46,40 @@ jobs:
           project-id: your-project-uuid
           scanners: all
           fail-on-severity: critical
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 That's it. The action will trigger a scan and poll until completion.
+
+### Enable PR Comments
+
+To get scan results posted as comments on your Pull Requests, you need two things:
+
+1. Pass `GITHUB_TOKEN` as an environment variable (as shown above)
+2. Grant `pull-requests: write` permission to the workflow:
+
+```yaml
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write       # required for PR comments
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run HenKaiPan Security Scan
+        uses: dyallab/henkaipan-action@v1
+        with:
+          api-url: https://app.henkaipan.com
+          api-key: ${{ secrets.HENKAIPAN_API_KEY }}
+          project-id: your-project-uuid
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+PR comments are posted automatically on `pull_request` events. The action also writes results to the **GitHub Actions Summary tab** for all event types (push, manual, etc).
 
 ---
 
@@ -178,7 +209,15 @@ By default, the action posts a comment to the PR with findings summary. To disab
     project-id: ${{ secrets.HENKAIPAN_PROJECT_ID }}
     scanners: all
     post-pr-comment: "false"
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+### GitHub Actions Step Summary
+
+In addition to PR comments, the action writes scan results to the **Actions Summary tab** (visible in the GitHub Actions run page). This works for all event types — push, pull_request, workflow_dispatch, etc.
+
+No extra configuration needed — it uses the built-in `$GITHUB_STEP_SUMMARY` environment variable.
 
 ---
 

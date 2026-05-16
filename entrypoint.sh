@@ -333,26 +333,28 @@ COMMENT_EOF
         | jq -r '.[] | select(.body | contains("HenKaiPan Security Scan Results")) | .id' 2>/dev/null \
         | head -1) && [[ -n "$COMMENT_ID" ]]; then
         echo "[PR] Updating existing comment $COMMENT_ID..."
-        curl -s -f -X PATCH \
+        curl -s -w "\n%{http_code}" -X PATCH \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" \
-            > /dev/null 2>&1 || POST_STATUS=$?
+            -o /dev/null \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" > /tmp/pr-comment-result 2>&1 || POST_STATUS=$?
     else
         echo "[PR] Posting new comment..."
-        curl -s -f -X POST \
+        curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
-            > /dev/null 2>&1 || POST_STATUS=$?
+            -o /dev/null \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" > /tmp/pr-comment-result 2>&1 || POST_STATUS=$?
     fi
 
-    if [[ $POST_STATUS -eq 0 ]]; then
-        echo "[PR] Comment posted successfully."
+    if [[ $POST_STATUS -ne 0 ]]; then
+        local HTTP_CODE
+        HTTP_CODE=$(tail -1 /tmp/pr-comment-result 2>/dev/null || echo "?")
+        echo "[PR] Failed to post comment (HTTP $HTTP_CODE, non-fatal, continuing)."
     else
-        echo "[PR] Failed to post comment (non-fatal, continuing)."
+        echo "[PR] Comment posted successfully."
     fi
 }
 

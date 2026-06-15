@@ -5,7 +5,7 @@ Run security scans (SAST, SCA, secrets, vulnerability scanning) in your GitHub A
 
 ---
 
-## ⚡ Quick Start (< 2 minutes)
+## ⚡ Quick Start (< 1 minute)
 
 ### 1. Create an API Token
 
@@ -43,14 +43,14 @@ jobs:
         with:
           api-url: https://app.henkaipan.com       # or your self-hosted URL
           api-key: ${{ secrets.HENKAIPAN_API_KEY }}
-          project-id: your-project-uuid
           scanners: all
-          fail-on-severity: critical
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-That's it. The action will trigger a scan and poll until completion.
+**No project setup needed.** When `project-id` is omitted, the project is auto-created from your repository name (`owner/repo`) on the first scan. All subsequent scans use the same project.
+
+> 💡 Want explicit control? Set `project-id: ${{ secrets.HENKAIPAN_PROJECT_ID }}` or `auto-create-project: "false"`.
 
 ### Enable PR Comments
 
@@ -89,7 +89,8 @@ PR comments are posted automatically on `pull_request` events. The action also w
 |-------|----------|---------|-------------|
 | `api-url` | Yes | — | Base URL of your HenKaiPan instance |
 | `api-key` | Yes | — | API token (stored as a GitHub Secret) |
-| `project-id` | Yes | — | UUID of the project to scan |
+| `project-id` | No | _(auto)_ | UUID of the project to scan. If omitted, the project is auto-created from the repo name |
+| `auto-create-project` | No | `true` | When `project-id` is empty, auto-create a project using the repo name (`owner/repo`). Set to `"false"` to require an explicit `project-id` |
 | `scanners` | No | `all` | Comma-separated list or pack (`all`, `sast`, `sca`, `secrets`, `vuln`, `containers`) |
 | `fail-on-severity` | No | _(none)_ | Exit code 1 if findings ≥ severity (`critical`, `high`, `medium`, `low`) |
 | `scan-branch` | No | current branch | Git branch to scan |
@@ -126,6 +127,22 @@ To specify individual scanners: `scanners: semgrep,trivy,gitleaks`
 ---
 
 ## 🔧 Examples
+
+### Minimal setup (auto-create project)
+
+```yaml
+- uses: actions/checkout@v4
+
+- name: Run HenKaiPan Security Scan
+  uses: dyallab/henkaipan-action@v1
+  with:
+    api-url: https://app.henkaipan.com
+    api-key: ${{ secrets.HENKAIPAN_API_KEY }}
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The project is auto-created from the repo name on the first run. All subsequent runs use the same project.
 
 ### Fail the pipeline on high or critical findings
 
@@ -233,6 +250,15 @@ No extra configuration needed — it uses the built-in `$GITHUB_STEP_SUMMARY` en
 
 ## ❓ FAQ
 
+**Q: I don't have a `project-id`. Can I still use the action?**  
+A: Yes! From v1.5.0+, `project-id` is optional. The action auto-creates a project named after your repository (`owner/repo`) on the first scan. All subsequent scans reuse the same project.
+
+**Q: How do I find the auto-created project?**  
+A: Log in to your HenKaiPan instance → Projects. The project is named after your GitHub repository (`owner/repo`). You can copy its UUID from the project settings and use it as `project-id` in future workflows for explicit control.
+
+**Q: Can I disable auto-creation?**  
+A: Yes. Set `auto-create-project: "false"` in your workflow. When disabled, you must provide an explicit `project-id` or the action will fail.
+
 **Q: The scan keeps timing out.**  
 A: Default max wait is 20 minutes. For large repos, consider using `scanners: semgrep,trivy` instead of `all`, or increase the worker pool size on your HenKaiPan instance.
 
@@ -270,18 +296,18 @@ The action is a Docker container. You can also run it manually:
 docker run \
   -e HENKAIPAN_API_URL=https://app.henkaipan.com \
   -e HENKAIPAN_API_KEY=your-token \
-  -e HENKAIPAN_PROJECT_ID=your-project-uuid \
   -e HENKAIPAN_SCANNERS=all \
   dyallab/henkaipan-action:v1
 ```
 
-Or with arguments:
+Or with arguments (all 10 positional args):
 
 ```bash
 docker run \
   dyallab/henkaipan-action:v1 \
-  "https://app.henkaipan.com" "hkp_your_token" "project-uuid" "all" "critical" ""
+  "https://app.henkaipan.com" "hkp_your_token" "" "all" "critical" "" "" "" "" "true"
 ```
+> Positional args: `api-url api-key project-id scanners fail-on-severity scan-branch post-pr-comment cf-client-id cf-client-secret auto-create-project`
 
 ---
 

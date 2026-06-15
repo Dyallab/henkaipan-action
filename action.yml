@@ -22,8 +22,16 @@ inputs:
     required: true
   project-id:
     description: >
-      UUID of the HenKaiPan project to scan. Found in project Settings.
-    required: true
+      UUID of the HenKaiPan project to scan. If omitted, the project is
+      auto-created from the repository name.
+    required: false
+  auto-create-project:
+    description: >
+      When project-id is empty, automatically create a new project
+      using the repository name (owner/repo). Set to "false" to
+      require a pre-existing project-id.
+    required: false
+    default: "true"
   scanners:
     description: >
       Comma-separated list of scanners or scanner packs.
@@ -100,5 +108,6 @@ runs:
     - ${{ inputs.post-pr-comment }}
     - ${{ inputs.cf-access-client-id }}
     - ${{ inputs.cf-access-client-secret }}
+    - ${{ inputs.auto-create-project }}
   post-if: cancelled()
   post-entrypoint: "/cleanup.sh"

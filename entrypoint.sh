@@ -14,6 +14,7 @@ SCAN_BRANCH="${6:-}"
 POST_PR_COMMENT="${7:-true}"
 CF_CLIENT_ID="${8:-}"
 CF_CLIENT_SECRET="${9:-}"
+AUTO_CREATE="${10:-true}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-}"
 GITHUB_EVENT_NAME="${GITHUB_EVENT_NAME:-}"
@@ -38,9 +39,12 @@ if [[ -z "$API_KEY" ]]; then
     echo "ERROR: api-key is required. Set the 'api-key' input."
     exit 1
 fi
-if [[ -z "$PROJECT_ID" ]]; then
-    echo "ERROR: project-id is required. Set the 'project-id' input."
+if [[ -z "$PROJECT_ID" && "$AUTO_CREATE" != "true" ]]; then
+    echo "ERROR: project-id is required (or set auto-create-project: true)."
     exit 1
+fi
+if [[ -z "$PROJECT_ID" && "$AUTO_CREATE" == "true" ]]; then
+    echo "Project: will auto-create from $GITHUB_REPOSITORY (no project-id provided)"
 fi
 
 # ── Cloudflare Access Service Token headers (optional) ─────────────────────────
@@ -54,7 +58,11 @@ echo "=============================================="
 echo " HenKaiPan Security Scan"
 echo "=============================================="
 echo "API URL     : $API_URL"
-echo "Project ID  : $PROJECT_ID"
+if [[ -n "$PROJECT_ID" ]]; then
+    echo "Project ID  : $PROJECT_ID"
+else
+    echo "Project ID  : auto-create from $GITHUB_REPOSITORY"
+fi
 echo "Scanners    : $SCANNERS"
 echo "Fail on     : ${FAIL_ON:-none}"
 echo "Branch      : ${SCAN_BRANCH:-<current branch>}"
@@ -75,11 +83,10 @@ PAYLOAD=$(jq -n \
     --arg scanners "$SCANNERS" \
     --arg branch "$GITHUB_BRANCH" \
     '{
-        project_id: $pid,
         repo_url: $url,
         scanners: ($scanners | split(",") | map(trim)),
         branch: $branch
-    }')
+    } + (if $pid != "" then {project_id: $pid} else {} end)')
 
 # ── Trigger scan ──────────────────────────────────────────────────────────────
 HTTP_CODE=$(curl "${CURL_COMMON_ARGS[@]}" -X POST \

@@ -284,12 +284,14 @@ if [[ $FAIL_THRESHOLD -gt 0 ]]; then
         echo ""
         echo "ERROR: Findings exceed fail-on-severity threshold ($FAIL_ON)."
         echo "Blocking pipeline."
-        exit 1
+        PIPELINE_BLOCKED=true
     fi
 fi
 
-echo ""
-echo "HenKaiPan scan completed successfully."
+if [[ "${PIPELINE_BLOCKED:-false}" != "true" ]]; then
+    echo ""
+    echo "HenKaiPan scan completed successfully."
+fi
 
 # ── Post PR comment ────────────────────────────────────────────────────────────
 postPRComment() {
@@ -394,5 +396,9 @@ SUMMARY_EOF
 
 postPRComment
 writeStepSummary
+
+if [[ "${PIPELINE_BLOCKED:-false}" == "true" ]]; then
+    exit 1
+fi
 
 exit 0

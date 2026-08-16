@@ -311,7 +311,7 @@ postPRComment() {
     # Build markdown body
     local BLOCKED=""
     if [[ $FAIL_THRESHOLD -gt 0 && $CURRENT_WEIGHT -ge $FAIL_THRESHOLD ]]; then
-        BLOCKED=" 🚫 **Pipeline blocked** — findings meet or exceed `$FAIL_ON` threshold."
+        BLOCKED=" 🚫 **Pipeline blocked** — findings meet or exceed \`$FAIL_ON\` threshold."
     fi
 
     local BODY=$(cat <<COMMENT_EOF
